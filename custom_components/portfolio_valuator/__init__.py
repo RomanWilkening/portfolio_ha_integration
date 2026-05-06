@@ -48,20 +48,35 @@ _SERVICE_SCHEMA = vol.Schema(
 _FRONTEND_URL_PREFIX = f"/{DOMAIN}_frontend"
 _FRONTEND_CARD_FILE = "portfolio-valuator-card.js"
 
+# Sidebar panel URL path (visible in the URL bar as ``/portfolio-valuator``).
+_PANEL_URL_PATH = "portfolio-valuator"
+_PANEL_REGISTERED_KEY = f"{DOMAIN}_panel_registered"
+_STATIC_REGISTERED_KEY = f"{DOMAIN}_static_registered"
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """One-time setup: register the bundled Lovelace card as a static resource."""
+    """One-time setup: register bundled frontend assets and the sidebar panel."""
     await _async_register_frontend_resources(hass)
+    await _async_register_panel(hass)
     return True
 
 
 async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
     """Serve the bundled card under a stable URL and register it in Lovelace.
 
+    Idempotent — safe to call from both ``async_setup`` and
+    ``async_setup_entry``.
+
     The Lovelace resource auto-registration only works for users on Lovelace
     "storage" mode. YAML-mode users still need to add the resource manually
     (the README documents that). The static path itself is always available.
+
+    The same JS module also exports a custom element used by the bundled
+    sidebar panel (see ``_async_register_panel``).
     """
+    if hass.data.get(_STATIC_REGISTERED_KEY):
+        return
+
     www_dir = os.path.join(os.path.dirname(__file__), "www")
     card_file = os.path.join(www_dir, _FRONTEND_CARD_FILE)
     if not os.path.isfile(card_file):
@@ -85,6 +100,8 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
                 "Could not register static frontend path", exc_info=True
             )
             return
+
+    hass.data[_STATIC_REGISTERED_KEY] = True
 
     # Best-effort auto-registration in the Lovelace dashboard resources list.
     try:
@@ -120,6 +137,50 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
             "Could not auto-register Lovelace resource — add it manually",
             exc_info=True,
         )
+
+
+async def _async_register_panel(hass: HomeAssistant) -> None:
+    """Auto-register the bundled sidebar panel.
+
+    The panel is shared by all configured Portfolio Valuator instances and is
+    self-discovering — it walks ``hass.states`` for every entity tagged with
+    ``attributes.integration == "portfolio_valuator"``. Users get a
+    zero-configuration overview that lists portfolios, positions, watchlist
+    items, FX rates and the live WebSocket status as soon as the integration
+    is loaded.
+    """
+    if hass.data.get(_PANEL_REGISTERED_KEY):
+        return
+
+    try:
+        from homeassistant.components import panel_custom  # noqa: WPS433
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("panel_custom unavailable — skipping panel registration")
+        return
+
+    module_url = f"{_FRONTEND_URL_PREFIX}/{_FRONTEND_CARD_FILE}"
+    try:
+        await panel_custom.async_register_panel(
+            hass,
+            webcomponent_name="portfolio-valuator-panel",
+            frontend_url_path=_PANEL_URL_PATH,
+            module_url=module_url,
+            sidebar_title="Portfolios",
+            sidebar_icon="mdi:chart-line",
+            embed_iframe=False,
+            require_admin=False,
+            config={},
+        )
+        hass.data[_PANEL_REGISTERED_KEY] = True
+        _LOGGER.info(
+            "Registered Portfolio Valuator sidebar panel at /%s", _PANEL_URL_PATH
+        )
+    except ValueError:
+        # ``async_register_panel`` raises ValueError if the URL path is
+        # already taken (e.g. after a config-entry reload). Treat as success.
+        hass.data[_PANEL_REGISTERED_KEY] = True
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Could not register sidebar panel", exc_info=True)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -160,6 +221,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_clear_auth_issue(hass, entry)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    # Make sure frontend assets and the sidebar panel are available even if
+    # ``async_setup`` ran before ``frontend`` / ``panel_custom`` were ready.
+    await _async_register_frontend_resources(hass)
+    await _async_register_panel(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

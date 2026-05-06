@@ -256,6 +256,8 @@ class PortfolioTotalSensor(_PVBase):
             "missing_fx": totals.get("missing_fx"),
             "portfolio_id": self._portfolio_id,
             "integration": DOMAIN,
+            "pv_kind": f"portfolio_{self._key}",
+            "pv_entry_id": self._entry_id,
         }
 
 
@@ -286,6 +288,15 @@ class PortfolioPnlPctSensor(_PVBase):
             return None
         return round(pct * 100.0, 4)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "portfolio_id": self._portfolio_id,
+            "integration": DOMAIN,
+            "pv_kind": "portfolio_pnl_pct",
+            "pv_entry_id": self._entry_id,
+        }
+
 
 class PortfolioValuedAtSensor(_PVBase):
     """Last valuation timestamp."""
@@ -308,6 +319,15 @@ class PortfolioValuedAtSensor(_PVBase):
         if not pf:
             return None
         return _parse_dt(pf.get("valued_at"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "portfolio_id": self._portfolio_id,
+            "integration": DOMAIN,
+            "pv_kind": "portfolio_valued_at",
+            "pv_entry_id": self._entry_id,
+        }
 
 
 # =============================================================== Position sensors
@@ -350,6 +370,11 @@ class _PositionBase(_PVBase):
             "currency": pos.get("currency"),
             "fx_rate": pos.get("fx_rate"),
             "fx_missing": pos.get("fx_missing"),
+            "integration": DOMAIN,
+            "pv_kind": getattr(self, "_pv_kind", "position"),
+            "portfolio_id": self._portfolio_id,
+            "position_id": self._position_id,
+            "pv_entry_id": self._entry_id,
         }
 
 
@@ -357,6 +382,7 @@ class PositionPriceSensor(_PositionBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_suggested_display_precision = 4
+    _pv_kind = "position_price"
 
     def __init__(self, coordinator, entry_id, portfolio_id, position_id, currency):
         super().__init__(coordinator, entry_id, portfolio_id, position_id)
@@ -377,6 +403,7 @@ class PositionMarketValueSensor(_PositionBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_suggested_display_precision = 2
+    _pv_kind = "position_market_value"
 
     def __init__(self, coordinator, entry_id, portfolio_id, position_id, currency):
         super().__init__(coordinator, entry_id, portfolio_id, position_id)
@@ -397,6 +424,7 @@ class PositionPnlSensor(_PositionBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_suggested_display_precision = 2
+    _pv_kind = "position_pnl"
 
     def __init__(self, coordinator, entry_id, portfolio_id, position_id, currency):
         super().__init__(coordinator, entry_id, portfolio_id, position_id)
@@ -417,6 +445,7 @@ class PositionPnlPctSensor(_PositionBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 2
+    _pv_kind = "position_pnl_pct"
 
     def __init__(self, coordinator, entry_id, portfolio_id, position_id):
         super().__init__(coordinator, entry_id, portfolio_id, position_id)
@@ -478,6 +507,10 @@ class WatchlistPriceSensor(_PVBase):
             "instrument_name": it.get("instrument_name"),
             "price_source": it.get("price_source"),
             "field": it.get("field"),
+            "integration": DOMAIN,
+            "pv_kind": "watchlist_price",
+            "watch_id": self._item_id,
+            "pv_entry_id": self._entry_id,
         }
 
 
@@ -522,4 +555,8 @@ class FxRateSensor(_PVBase):
             "base_currency": it.get("base_currency"),
             "quote_currency": it.get("quote_currency"),
             "price_source": it.get("price_source"),
+            "integration": DOMAIN,
+            "pv_kind": "fx_rate",
+            "fx_id": self._fx_id,
+            "pv_entry_id": self._entry_id,
         }

@@ -145,18 +145,35 @@ integration and is auto-served at `/portfolio_valuator_frontend/portfolio-valuat
         type: module
   ```
 
-Card usage:
+The card is **fully self-discovering** — it walks `hass.states` for every entity
+created by the integration (using the `integration: portfolio_valuator` and
+`pv_kind` attributes) and renders the complete overview. No `entities:` list is
+needed.
 
 ```yaml
 type: custom:portfolio-valuator-card
-title: Depots
-# Optional — auto-discovered if omitted:
-# entities:
-#   - sensor.portfolio_depot_market_value
+# Optional: title is no longer used (the section headers are built in)
+# Optional: compact: true   ── falls back to the previous one-row-per-portfolio
+#                              summary, useful for sidebars or dense dashboards.
 ```
 
-The card shows one row per portfolio with market value, signed P/L and P/L % and
-opens the More-Info dialog on click.
+The card shows, per portfolio, market value, signed P/L and P/L %, the last
+valuation timestamp and a collapsible position table (quantity, price, market
+value, P/L, P/L %), plus a watchlist tile grid, an FX-rate table and the live
+WebSocket connection status. Click any value to open the standard Home Assistant
+*More info* dialog for the underlying sensor.
+
+## Auto-discovered sidebar panel
+
+For users who don't want to assemble a Lovelace dashboard at all, the integration
+**auto-registers a sidebar panel** named **Portfolios** (icon `mdi:chart-line`)
+under `/portfolio-valuator`. It appears in the Home Assistant sidebar as soon as
+the integration finishes loading and renders the same self-discovering overview
+described above (portfolios, positions, watchlist, FX rates, service status) at
+full panel width — with zero manual configuration. The look follows the standard
+Home Assistant card style and respects the active theme via the usual
+`--ha-card-background`, `--primary-text-color`, `--success-color`,
+`--error-color` and `--divider-color` CSS variables.
 
 ## Lovelace examples
 
