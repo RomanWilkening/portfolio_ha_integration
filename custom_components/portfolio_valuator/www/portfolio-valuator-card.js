@@ -669,7 +669,7 @@ function renderHtml(model, opts) {
 
   const portfoliosHtml = model.portfolios.length === 0
     ? `<div class="pv-card pv-empty">${STR_DE.noPortfolios}</div>`
-    : model.portfolios.map((pf) => renderPortfolioCard(pf)).join("");
+    : model.portfolios.map((pf) => renderPortfolioCard(pf, opts)).join("");
 
   const watchlistHtml = model.watchlist.length === 0
     ? `<div class="pv-card pv-empty">${STR_DE.noWatchlist}</div>`
@@ -698,9 +698,11 @@ function renderHtml(model, opts) {
   `;
 }
 
-function renderPortfolioCard(pf) {
+function renderPortfolioCard(pf, opts) {
   const cur = pf.currency || "EUR";
   const s = sign(pf.totals.pnl);
+  const openSet = (opts && opts.openPositions) || null;
+  const isOpen = openSet ? openSet.has(pf.id) : false;
   const tile = (label, valueHtml, subHtml, eid, big) => `
     <div class="pv-tile" data-entity="${escapeHtml(eid || "")}">
       <div class="pv-tile-label">${label}</div>
@@ -711,10 +713,10 @@ function renderPortfolioCard(pf) {
   const positionsHtml = pf.positions.length === 0
     ? ""
     : `
-      <div class="pv-positions" data-open="false">
+      <div class="pv-positions" data-pf-id="${escapeHtml(String(pf.id))}" data-open="${isOpen ? "true" : "false"}">
         <div class="pv-positions-toggle">
           <span class="chev">▶</span>
-          <span class="label-show">${STR_DE.showPositions}</span>
+          <span class="label-show">${isOpen ? STR_DE.hidePositions : STR_DE.showPositions}</span>
           <span class="count">(${pf.positions.length})</span>
         </div>
         <div class="pv-positions-table">
@@ -827,6 +829,9 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._compact = false;
     this._lastSig = null;
+    // Persists which portfolios have their positions table expanded so that
+    // websocket-driven re-renders don't snap them shut on every push.
+    this._openPositions = new Set();
   }
 
   set hass(hass) {
@@ -866,7 +871,16 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     if (sig === this._lastSig) return;
     this._lastSig = sig;
 
-    this.shadowRoot.innerHTML = `<style>${STYLES}</style>${renderHtml(model, { compact: this._compact })}`;
+    // Drop tracked open-state for portfolios that are no longer present so
+    // the Set cannot grow unbounded across structural changes.
+    if (this._openPositions.size) {
+      const known = new Set(model.portfolios.map((p) => p.id));
+      for (const pid of this._openPositions) {
+        if (!known.has(pid)) this._openPositions.delete(pid);
+      }
+    }
+
+    this.shadowRoot.innerHTML = `<style>${STYLES}</style>${renderHtml(model, { compact: this._compact, openPositions: this._openPositions })}`;
     this._wireInteractions();
   }
 
@@ -883,17 +897,25 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
         this.dispatchEvent(event);
       });
     });
-    // Collapsible position tables.
+    // Collapsible position tables. The open state is tracked on the component
+    // instance (``_openPositions``) so that data pushes (which trigger a full
+    // re-render) preserve the user's choice.
     root.querySelectorAll(".pv-positions").forEach((wrap) => {
       const toggle = wrap.querySelector(".pv-positions-toggle");
       if (!toggle) return;
       const showLabel = toggle.querySelector(".label-show");
+      const pfId = wrap.getAttribute("data-pf-id");
       toggle.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const open = wrap.getAttribute("data-open") === "true";
-        wrap.setAttribute("data-open", open ? "false" : "true");
+        const next = !open;
+        wrap.setAttribute("data-open", next ? "true" : "false");
         if (showLabel) {
-          showLabel.textContent = open ? STR_DE.showPositions : STR_DE.hidePositions;
+          showLabel.textContent = next ? STR_DE.hidePositions : STR_DE.showPositions;
+        }
+        if (pfId) {
+          if (next) this._openPositions.add(pfId);
+          else this._openPositions.delete(pfId);
         }
       });
     });
