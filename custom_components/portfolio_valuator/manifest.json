@@ -1,7 +1,7 @@
 {
   "domain": "portfolio_valuator",
   "name": "Portfolio Valuator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "documentation": "https://github.com/RomanWilkening/portfolio_ha_integration",
   "issue_tracker": "https://github.com/RomanWilkening/portfolio_ha_integration/issues",
   "codeowners": ["@RomanWilkening"],

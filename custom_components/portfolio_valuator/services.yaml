@@ -5,14 +5,14 @@ force_refresh:
     to refresh valuations, watchlist prices and FX rates.
   fields:
     entry_id:
-      name: Config entry ID
+      name: Config entry
       description: >
         Optional. Limit the refresh to a single Portfolio Valuator config entry.
         If omitted, all configured entries are refreshed.
-      example: "01HV1ABCDEFGHJKLMNPQRSTUV"
       required: false
       selector:
-        text:
+        config_entry:
+          integration: portfolio_valuator
 
 restart_stream:
   name: Restart WebSocket stream
@@ -21,11 +21,11 @@ restart_stream:
     service. Useful after network blips or reverse-proxy restarts.
   fields:
     entry_id:
-      name: Config entry ID
+      name: Config entry
       description: >
         Optional. Limit the restart to a single Portfolio Valuator config entry.
         If omitted, all configured entries are restarted.
-      example: "01HV1ABCDEFGHJKLMNPQRSTUV"
       required: false
       selector:
-        text:
+        config_entry:
+          integration: portfolio_valuator

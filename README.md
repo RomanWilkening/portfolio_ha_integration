@@ -129,6 +129,35 @@ The integration registers two services:
 Both accept an optional `entry_id` field to limit the action to a single
 configured Valuator instance.
 
+## Frontend card
+
+A bundled, dependency-free Lovelace card (`portfolio-valuator-card`) ships with the
+integration and is auto-served at `/portfolio_valuator_frontend/portfolio-valuator-card.js`.
+
+- **Lovelace storage mode** (default): the integration auto-registers the resource
+  on first load — no manual step needed; just add the card to a dashboard.
+- **Lovelace YAML mode**: add the resource yourself:
+
+  ```yaml
+  lovelace:
+    resources:
+      - url: /portfolio_valuator_frontend/portfolio-valuator-card.js
+        type: module
+  ```
+
+Card usage:
+
+```yaml
+type: custom:portfolio-valuator-card
+title: Depots
+# Optional — auto-discovered if omitted:
+# entities:
+#   - sensor.portfolio_depot_market_value
+```
+
+The card shows one row per portfolio with market value, signed P/L and P/L % and
+opens the More-Info dialog on click.
+
 ## Lovelace examples
 
 A long-term statistics graph for a portfolio's market value:

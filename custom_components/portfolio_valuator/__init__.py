@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import voluptuous as vol
 
@@ -12,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationErr
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.typing import ConfigType
 
 from .api import PortfolioValuatorAuthError, PortfolioValuatorClient
 from .const import (
@@ -32,12 +34,92 @@ from .coordinator import PortfolioValuatorCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _SERVICE_SCHEMA = vol.Schema(
     {vol.Optional("entry_id"): cv.string},
     extra=vol.ALLOW_EXTRA,
 )
+
+# URL prefix under which we expose the bundled Lovelace card. Anything inside
+# ``custom_components/portfolio_valuator/www/`` is served from this path.
+_FRONTEND_URL_PREFIX = f"/{DOMAIN}_frontend"
+_FRONTEND_CARD_FILE = "portfolio-valuator-card.js"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """One-time setup: register the bundled Lovelace card as a static resource."""
+    await _async_register_frontend_resources(hass)
+    return True
+
+
+async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
+    """Serve the bundled card under a stable URL and register it in Lovelace.
+
+    The Lovelace resource auto-registration only works for users on Lovelace
+    "storage" mode. YAML-mode users still need to add the resource manually
+    (the README documents that). The static path itself is always available.
+    """
+    www_dir = os.path.join(os.path.dirname(__file__), "www")
+    card_file = os.path.join(www_dir, _FRONTEND_CARD_FILE)
+    if not os.path.isfile(card_file):
+        _LOGGER.debug("Frontend card not found at %s — skipping", card_file)
+        return
+
+    # Try the modern API first; fall back to the legacy one for older HA cores.
+    try:
+        from homeassistant.components.http import StaticPathConfig
+
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(_FRONTEND_URL_PREFIX, www_dir, cache_headers=False)]
+        )
+    except Exception:  # noqa: BLE001
+        try:
+            hass.http.register_static_path(  # type: ignore[attr-defined]
+                _FRONTEND_URL_PREFIX, www_dir, cache_headers=False
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not register static frontend path", exc_info=True
+            )
+            return
+
+    # Best-effort auto-registration in the Lovelace dashboard resources list.
+    try:
+        from homeassistant.components.lovelace import (  # noqa: WPS433
+            CONF_RESOURCES,
+        )
+        from homeassistant.components.lovelace.resources import (  # noqa: WPS433
+            ResourceStorageCollection,
+        )
+
+        lovelace = hass.data.get("lovelace")
+        if lovelace is None:
+            return
+        resources = getattr(lovelace, "resources", None)
+        if resources is None:
+            return
+        # Only the storage-backed collection supports programmatic add.
+        if not isinstance(resources, ResourceStorageCollection):
+            return
+        if not resources.loaded:
+            await resources.async_load()
+        url = f"{_FRONTEND_URL_PREFIX}/{_FRONTEND_CARD_FILE}"
+        existing = {
+            (r.get("url") or "").split("?")[0]
+            for r in (resources.async_items() or [])
+        }
+        if url in existing:
+            return
+        await resources.async_create_item({CONF_RESOURCES: url, "res_type": "module"})
+        _LOGGER.info("Registered Lovelace resource %s", url)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug(
+            "Could not auto-register Lovelace resource — add it manually",
+            exc_info=True,
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

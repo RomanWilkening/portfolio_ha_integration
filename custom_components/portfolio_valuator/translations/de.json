@@ -11,6 +11,13 @@
           "verify_ssl": "SSL-Zertifikat prüfen",
           "api_token": "API-Token (optional)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Portfolio Valuator neu authentifizieren",
+        "description": "Das API-Token für **{host}** wurde abgelehnt. Gib ein neues Token ein, um den Zugriff wiederherzustellen.",
+        "data": {
+          "api_token": "API-Token"
+        }
       }
     },
     "error": {
@@ -19,7 +26,16 @@
       "unknown": "Unerwarteter Fehler – siehe Home-Assistant-Logs."
     },
     "abort": {
-      "already_configured": "Diese Portfolio-Valuator-Instanz ist bereits konfiguriert."
+      "already_configured": "Diese Portfolio-Valuator-Instanz ist bereits konfiguriert.",
+      "reauth_successful": "Re-Authentifizierung erfolgreich.",
+      "reauth_unknown_entry": "Der Config-Entry konnte nicht mehr gefunden werden."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ws_connected": {
+        "name": "WebSocket verbunden"
+      }
     }
   },
   "options": {

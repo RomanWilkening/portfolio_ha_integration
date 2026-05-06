@@ -254,6 +254,8 @@ class PortfolioTotalSensor(_PVBase):
         return {
             "valued_at": pf.get("valued_at"),
             "missing_fx": totals.get("missing_fx"),
+            "portfolio_id": self._portfolio_id,
+            "integration": DOMAIN,
         }
 
 

@@ -118,6 +118,59 @@ class PortfolioValuatorConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         return PortfolioValuatorOptionsFlow(config_entry)
 
+    # ------------------------------------------------------------------ reauth
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Triggered by ``ConfigEntryAuthFailed`` — ask the user for a new token."""
+        # ``self.context`` already carries ``entry_id`` set by HA core.
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        entry = self.hass.config_entries.async_get_entry(
+            self.context.get("entry_id", "")
+        )
+        if entry is None:
+            return self.async_abort(reason="reauth_unknown_entry")
+
+        if user_input is not None:
+            token = (user_input.get(CONF_API_TOKEN) or "").strip()
+            session = async_get_clientsession(self.hass)
+            client = PortfolioValuatorClient(
+                session=session,
+                host=entry.data[CONF_HOST],
+                port=entry.data[CONF_PORT],
+                use_ssl=entry.data.get(CONF_USE_SSL, DEFAULT_USE_SSL),
+                api_token=token or None,
+                verify_ssl=entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+            )
+            try:
+                await client.async_test_connection()
+            except PortfolioValuatorAuthError:
+                errors["base"] = "invalid_auth"
+            except PortfolioValuatorConnectionError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during reauth")
+                errors["base"] = "unknown"
+            else:
+                new_data = {**entry.data, CONF_API_TOKEN: token}
+                self.hass.config_entries.async_update_entry(entry, data=new_data)
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {vol.Optional(CONF_API_TOKEN, default=""): str}
+            ),
+            errors=errors,
+            description_placeholders={"host": entry.data.get(CONF_HOST, "")},
+        )
+
 
 class PortfolioValuatorOptionsFlow(OptionsFlow):
     """Options flow: token, scan interval, REST fallback, SSL verification."""
