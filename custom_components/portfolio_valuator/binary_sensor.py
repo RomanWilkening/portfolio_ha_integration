@@ -67,3 +67,12 @@ class PortfolioValuatorWsConnected(
         # Always available — the whole point of a connectivity sensor is to
         # signal "off" when the upstream link is gone.
         return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "integration": DOMAIN,
+            "pv_kind": "ws_connected",
+            "pv_entry_id": self._entry_id,
+            "service_version": getattr(self.coordinator, "service_version", None),
+        }
