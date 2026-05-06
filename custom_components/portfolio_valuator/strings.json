@@ -21,5 +21,50 @@
     "abort": {
       "already_configured": "This Portfolio Valuator instance is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Portfolio Valuator options",
+        "description": "Adjust connection and polling behaviour. Changes reload the integration.",
+        "data": {
+          "api_token": "API token (leave empty to remove)",
+          "verify_ssl": "Verify SSL certificate",
+          "scan_interval": "REST poll interval (seconds)",
+          "rest_fallback": "Periodic REST poll while WebSocket is connected"
+        }
+      }
+    },
+    "error": {
+      "scan_interval_out_of_range": "Scan interval must be between 10 and 3600 seconds."
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Force refresh",
+      "description": "Trigger an immediate REST refresh of the Portfolio Valuator data.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Optional. Limit to a single config entry."
+        }
+      }
+    },
+    "restart_stream": {
+      "name": "Restart WebSocket stream",
+      "description": "Reconnect the WebSocket to the Portfolio Valuator service.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Optional. Limit to a single config entry."
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Portfolio Valuator: authentication failed",
+      "description": "The API token for **{title}** ({host}) was rejected by the Portfolio Valuator service. Open the integration options and update the token to restore access."
+    }
   }
 }

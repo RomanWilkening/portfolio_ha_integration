@@ -15,8 +15,21 @@ DEFAULT_PORT: Final = 8000
 DEFAULT_USE_SSL: Final = False
 DEFAULT_VERIFY_SSL: Final = True
 
-# Polling fallback when WebSocket cannot be established.
+# Polling fallback when WebSocket cannot be established (also default for options).
 SCAN_INTERVAL_SECONDS: Final = 60
+MIN_SCAN_INTERVAL_SECONDS: Final = 10
+MAX_SCAN_INTERVAL_SECONDS: Final = 3600
+
+CONF_SCAN_INTERVAL: Final = "scan_interval"
+CONF_REST_FALLBACK: Final = "rest_fallback"
+DEFAULT_REST_FALLBACK: Final = True
+
+# Service names
+SERVICE_FORCE_REFRESH: Final = "force_refresh"
+SERVICE_RESTART_STREAM: Final = "restart_stream"
+
+# Repair issue ids
+ISSUE_AUTH_FAILED: Final = "auth_failed"
 
 # WebSocket reconnect backoff
 WS_BACKOFF_INITIAL: Final = 2

@@ -21,5 +21,50 @@
     "abort": {
       "already_configured": "Diese Portfolio-Valuator-Instanz ist bereits konfiguriert."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Portfolio-Valuator-Einstellungen",
+        "description": "Verbindungs- und Polling-Verhalten anpassen. Änderungen laden die Integration neu.",
+        "data": {
+          "api_token": "API-Token (leer lassen zum Entfernen)",
+          "verify_ssl": "SSL-Zertifikat prüfen",
+          "scan_interval": "REST-Polling-Intervall (Sekunden)",
+          "rest_fallback": "Periodisches REST-Polling auch bei aktiver WebSocket-Verbindung"
+        }
+      }
+    },
+    "error": {
+      "scan_interval_out_of_range": "Polling-Intervall muss zwischen 10 und 3600 Sekunden liegen."
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Sofort aktualisieren",
+      "description": "Stößt eine sofortige REST-Aktualisierung der Portfolio-Valuator-Daten an.",
+      "fields": {
+        "entry_id": {
+          "name": "Config-Entry-ID",
+          "description": "Optional. Auf einen einzelnen Config-Entry beschränken."
+        }
+      }
+    },
+    "restart_stream": {
+      "name": "WebSocket-Stream neu starten",
+      "description": "Trennt die WebSocket-Verbindung zum Portfolio-Valuator-Dienst und baut sie neu auf.",
+      "fields": {
+        "entry_id": {
+          "name": "Config-Entry-ID",
+          "description": "Optional. Auf einen einzelnen Config-Entry beschränken."
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Portfolio Valuator: Authentifizierung fehlgeschlagen",
+      "description": "Das API-Token für **{title}** ({host}) wurde vom Portfolio-Valuator-Dienst abgelehnt. Öffne die Integrations-Einstellungen und aktualisiere das Token, um den Zugriff wiederherzustellen."
+    }
   }
 }

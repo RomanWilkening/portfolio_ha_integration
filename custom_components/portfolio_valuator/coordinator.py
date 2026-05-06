@@ -17,6 +17,9 @@ from .api import (
     PortfolioValuatorConnectionError,
 )
 from .const import (
+    CONF_REST_FALLBACK,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_REST_FALLBACK,
     DOMAIN,
     SCAN_INTERVAL_SECONDS,
     SIGNAL_STRUCTURE_CHANGED,
@@ -45,14 +48,19 @@ class PortfolioValuatorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: ConfigEntry,
         client: PortfolioValuatorClient,
     ) -> None:
+        scan = int(entry.options.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL_SECONDS))
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{entry.entry_id}",
-            update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
+            update_interval=timedelta(seconds=scan),
         )
         self.entry = entry
         self.client = client
+        self.rest_fallback: bool = bool(
+            entry.options.get(CONF_REST_FALLBACK, DEFAULT_REST_FALLBACK)
+        )
+        self.service_version: str | None = None
         self._ws_task: asyncio.Task[None] | None = None
         self._ws_connected: bool = False
         self.data = {
@@ -66,7 +74,15 @@ class PortfolioValuatorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """REST poll. Used as fallback and for initial load. Skipped while WS live."""
         # If WebSocket is delivering data we still poll occasionally for watchlist /
-        # fx_rates because not every Valuator version pushes those on every tick.
+        # fx_rates because not every Valuator version pushes those on every tick —
+        # unless the user explicitly disabled REST fallback.
+        if (
+            self._ws_connected
+            and self.data
+            and self.data.get("valuations")
+            and not self.rest_fallback
+        ):
+            return self.data
         try:
             valuations, watchlist, fx_rates = await asyncio.gather(
                 self.client.async_get_valuations(),
@@ -136,6 +152,13 @@ class PortfolioValuatorCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
             self._ws_task = None
+
+    async def async_restart_ws(self) -> None:
+        """Stop and restart the WebSocket consumer."""
+        await self.async_stop_ws()
+        # Reset the client's stop event so a new run can begin.
+        self.client.reset()
+        await self.async_start_ws()
 
     async def _on_ws_state(self, connected: bool) -> None:
         self._ws_connected = connected

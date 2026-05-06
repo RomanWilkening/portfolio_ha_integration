@@ -6,7 +6,13 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -18,12 +24,18 @@ from .const import (
     CONF_API_TOKEN,
     CONF_HOST,
     CONF_PORT,
+    CONF_REST_FALLBACK,
+    CONF_SCAN_INTERVAL,
     CONF_USE_SSL,
     CONF_VERIFY_SSL,
     DEFAULT_PORT,
+    DEFAULT_REST_FALLBACK,
     DEFAULT_USE_SSL,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
+    MAX_SCAN_INTERVAL_SECONDS,
+    MIN_SCAN_INTERVAL_SECONDS,
+    SCAN_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,3 +112,71 @@ class PortfolioValuatorConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=_schema(user_input),
             errors=errors,
         )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return PortfolioValuatorOptionsFlow(config_entry)
+
+
+class PortfolioValuatorOptionsFlow(OptionsFlow):
+    """Options flow: token, scan interval, REST fallback, SSL verification."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        # Note: do NOT store ``self.config_entry =`` directly — HA exposes it
+        # via ``self.config_entry`` automatically in newer versions and warns
+        # about overriding it. We keep a reference under a different name.
+        self._entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        current = {**self._entry.data, **self._entry.options}
+
+        if user_input is not None:
+            scan = int(user_input.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL_SECONDS))
+            if not MIN_SCAN_INTERVAL_SECONDS <= scan <= MAX_SCAN_INTERVAL_SECONDS:
+                errors[CONF_SCAN_INTERVAL] = "scan_interval_out_of_range"
+            else:
+                # API token can also be (re-)set via options; persist it into
+                # ``data`` so it survives reloads even if options later get cleared.
+                new_data = dict(self._entry.data)
+                token = (user_input.get(CONF_API_TOKEN) or "").strip()
+                new_data[CONF_API_TOKEN] = token
+                new_data[CONF_VERIFY_SSL] = bool(
+                    user_input.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+                )
+                self.hass.config_entries.async_update_entry(
+                    self._entry, data=new_data
+                )
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_SCAN_INTERVAL: scan,
+                        CONF_REST_FALLBACK: bool(
+                            user_input.get(CONF_REST_FALLBACK, DEFAULT_REST_FALLBACK)
+                        ),
+                    },
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_API_TOKEN, default=current.get(CONF_API_TOKEN, "")
+                ): str,
+                vol.Optional(
+                    CONF_VERIFY_SSL,
+                    default=current.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL),
+                ): bool,
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=current.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL_SECONDS),
+                ): int,
+                vol.Optional(
+                    CONF_REST_FALLBACK,
+                    default=current.get(CONF_REST_FALLBACK, DEFAULT_REST_FALLBACK),
+                ): bool,
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

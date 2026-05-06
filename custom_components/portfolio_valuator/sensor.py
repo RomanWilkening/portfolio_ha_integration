@@ -33,21 +33,32 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------- helpers
-def _device_for_portfolio(entry_id: str, pf: dict[str, Any]) -> DeviceInfo:
+def _device_for_portfolio(
+    entry_id: str,
+    pf: dict[str, Any],
+    sw_version: str | None = None,
+) -> DeviceInfo:
     pid = pf.get("id")
     name = pf.get("name") or f"Portfolio {pid}"
-    return DeviceInfo(
+    info: DeviceInfo = DeviceInfo(
         identifiers={(DOMAIN, f"{entry_id}_portfolio_{pid}")},
         name=f"Portfolio: {name}",
         manufacturer=MANUFACTURER,
         model=MODEL_PORTFOLIO,
     )
+    if sw_version:
+        info["sw_version"] = sw_version
+    return info
 
 
 def _device_for_watch_item(entry_id: str, item: dict[str, Any]) -> DeviceInfo:
     iid = item.get("id")
-    label = (item.get("label") or item.get("instrument_name") or item.get("instrument_code")
-             or f"Item {iid}")
+    label = (
+        item.get("label")
+        or item.get("instrument_name")
+        or item.get("instrument_code")
+        or f"Item {iid}"
+    )
     return DeviceInfo(
         identifiers={(DOMAIN, f"{entry_id}_watch_{iid}")},
         name=f"Watchlist: {label}",
@@ -227,7 +238,7 @@ class PortfolioTotalSensor(_PVBase):
         if device_class is not None:
             self._attr_device_class = device_class
         pf = _find_portfolio(coordinator, portfolio_id) or {"portfolio": {"id": portfolio_id}}
-        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {})
+        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {}, getattr(coordinator, "service_version", None))
 
     @property
     def native_value(self) -> float | None:
@@ -261,7 +272,7 @@ class PortfolioPnlPctSensor(_PVBase):
         self._attr_name = "Profit / Loss %"
         self._attr_unique_id = f"{entry_id}_portfolio_{portfolio_id}_pnl_pct"
         pf = _find_portfolio(coordinator, portfolio_id) or {"portfolio": {"id": portfolio_id}}
-        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {})
+        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {}, getattr(coordinator, "service_version", None))
 
     @property
     def native_value(self) -> float | None:
@@ -287,7 +298,7 @@ class PortfolioValuedAtSensor(_PVBase):
         self._attr_name = "Valued At"
         self._attr_unique_id = f"{entry_id}_portfolio_{portfolio_id}_valued_at"
         pf = _find_portfolio(coordinator, portfolio_id) or {"portfolio": {"id": portfolio_id}}
-        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {})
+        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {}, getattr(coordinator, "service_version", None))
 
     @property
     def native_value(self) -> datetime | None:
@@ -310,7 +321,7 @@ class _PositionBase(_PVBase):
         self._portfolio_id = portfolio_id
         self._position_id = position_id
         pf = _find_portfolio(coordinator, portfolio_id) or {"portfolio": {"id": portfolio_id}}
-        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {})
+        self._attr_device_info = _device_for_portfolio(entry_id, pf.get("portfolio") or {}, getattr(coordinator, "service_version", None))
 
     def _position(self) -> dict[str, Any] | None:
         return _find_position(self.coordinator, self._portfolio_id, self._position_id)

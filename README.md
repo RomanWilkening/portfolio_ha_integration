@@ -61,6 +61,14 @@ Valuator** and provide:
 The integration will connect to `/api/health` (or fall back to `/api/portfolios`) to
 verify the connection.
 
+### Options
+
+After setup, the integration's **Configure** button opens an options flow where you
+can change the **API token**, toggle **SSL verification**, set the
+**REST poll interval** (default 60 s, range 10–3600 s) and disable the periodic
+**REST fallback** while the WebSocket is healthy. Saving the form reloads the
+integration automatically.
+
 ## Entities
 
 For a portfolio named *Depot* the following entities are created (translation keys
@@ -108,6 +116,65 @@ All monetary sensors carry `state_class: measurement` (and a `device_class` of
   Statistics dashboard use.
 
 A single entity therefore covers both the detailed and the long-term view.
+
+## Services
+
+The integration registers two services:
+
+| Service | Purpose |
+|---|---|
+| `portfolio_valuator.force_refresh` | Trigger an immediate REST refresh of valuations / watchlist / FX. |
+| `portfolio_valuator.restart_stream` | Tear down and re-establish the WebSocket connection. |
+
+Both accept an optional `entry_id` field to limit the action to a single
+configured Valuator instance.
+
+## Lovelace examples
+
+A long-term statistics graph for a portfolio's market value:
+
+```yaml
+type: statistics-graph
+title: Depot – Marktwert (90 Tage)
+entities:
+  - sensor.portfolio_depot_market_value
+period: hour
+days_to_show: 90
+stat_types:
+  - mean
+  - min
+  - max
+```
+
+A live mini-card with the current P/L and percentage:
+
+```yaml
+type: glance
+title: Depot live
+entities:
+  - entity: sensor.portfolio_depot_market_value
+    name: Marktwert
+  - entity: sensor.portfolio_depot_profit_loss
+    name: P/L
+  - entity: sensor.portfolio_depot_profit_loss_pct
+    name: P/L %
+```
+
+A high-resolution chart of a watchlist instrument (requires the
+[`apexcharts-card`](https://github.com/RomenRyu/apexcharts-card) HACS frontend
+plugin):
+
+```yaml
+type: custom:apexcharts-card
+header:
+  title: BTC live
+  show: true
+graph_span: 24h
+series:
+  - entity: sensor.watchlist_btc_price
+    type: line
+    stroke_width: 2
+```
 
 ## Troubleshooting
 

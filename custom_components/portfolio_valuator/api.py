@@ -112,6 +112,19 @@ class PortfolioValuatorClient:
     async def async_get_fx_rates(self) -> list[dict[str, Any]]:
         return await self._get_json("/api/fx-rates")
 
+    async def async_get_version(self) -> dict[str, Any] | None:
+        """Return the Valuator service version, if exposed.
+
+        Older Valuator builds don't ship `/api/version`; return ``None`` then.
+        """
+        try:
+            data = await self._get_json("/api/version", timeout=5.0)
+        except PortfolioValuatorAuthError:
+            raise
+        except PortfolioValuatorConnectionError:
+            return None
+        return data if isinstance(data, dict) else {"version": str(data)}
+
     # ------------------------------------------------------------ WebSocket
     async def async_run_ws(
         self,
@@ -208,6 +221,10 @@ class PortfolioValuatorClient:
                 await ws.close()
             except Exception:  # noqa: BLE001
                 pass
+
+    def reset(self) -> None:
+        """Clear the internal stop flag so ``async_run_ws`` can be started again."""
+        self._stop = asyncio.Event()
 
 
 __all__ = [
