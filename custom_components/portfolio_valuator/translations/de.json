@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Portfolio Valuator verbinden",
+        "description": "Gib die Verbindungsdaten deines Portfolio-Valuator-Dienstes ein. Das API-Token wird nur benötigt, wenn der Dienst eines konfiguriert hat.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "HTTPS / WSS verwenden",
+          "verify_ssl": "SSL-Zertifikat prüfen",
+          "api_token": "API-Token (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Portfolio-Valuator-Dienst nicht erreichbar.",
+      "invalid_auth": "Das API-Token wurde vom Dienst abgelehnt.",
+      "unknown": "Unerwarteter Fehler – siehe Home-Assistant-Logs."
+    },
+    "abort": {
+      "already_configured": "Diese Portfolio-Valuator-Instanz ist bereits konfiguriert."
+    }
+  }
+}

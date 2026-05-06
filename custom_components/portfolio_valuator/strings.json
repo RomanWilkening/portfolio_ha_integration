@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Portfolio Valuator",
+        "description": "Enter the connection details for your Portfolio Valuator service. The API token is only required if the service has one configured.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "Use HTTPS / WSS",
+          "verify_ssl": "Verify SSL certificate",
+          "api_token": "API token (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Portfolio Valuator service.",
+      "invalid_auth": "The API token was rejected by the service.",
+      "unknown": "Unexpected error – see Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This Portfolio Valuator instance is already configured."
+    }
+  }
+}

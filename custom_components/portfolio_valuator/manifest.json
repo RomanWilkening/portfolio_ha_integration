@@ -1,0 +1,13 @@
+{
+  "domain": "portfolio_valuator",
+  "name": "Portfolio Valuator",
+  "version": "0.1.0",
+  "documentation": "https://github.com/RomanWilkening/portfolio_ha_integration",
+  "issue_tracker": "https://github.com/RomanWilkening/portfolio_ha_integration/issues",
+  "codeowners": ["@RomanWilkening"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "integration_type": "hub",
+  "dependencies": [],
+  "requirements": ["aiohttp>=3.8.0"]
+}
