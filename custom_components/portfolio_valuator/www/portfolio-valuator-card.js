@@ -309,9 +309,13 @@ function finaliseModel(model) {
 
   // Aggregate "last valued" across all portfolios for the service banner.
   let lastValuedAt = null;
+  let lastValuedAtMs = -Infinity;
   for (const pf of portfolios) {
     if (!pf.valued_at) continue;
-    if (!lastValuedAt || new Date(pf.valued_at) > new Date(lastValuedAt)) {
+    const t = new Date(pf.valued_at).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (t > lastValuedAtMs) {
+      lastValuedAtMs = t;
       lastValuedAt = pf.valued_at;
     }
   }
