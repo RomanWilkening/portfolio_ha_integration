@@ -1,0 +1,86 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Portfolio Valuator verbinden",
+        "description": "Gib die Verbindungsdaten deines Portfolio-Valuator-Dienstes ein. Das API-Token wird nur benötigt, wenn der Dienst eines konfiguriert hat.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "HTTPS / WSS verwenden",
+          "verify_ssl": "SSL-Zertifikat prüfen",
+          "api_token": "API-Token (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Portfolio Valuator neu authentifizieren",
+        "description": "Das API-Token für **{host}** wurde abgelehnt. Gib ein neues Token ein, um den Zugriff wiederherzustellen.",
+        "data": {
+          "api_token": "API-Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Portfolio-Valuator-Dienst nicht erreichbar.",
+      "invalid_auth": "Das API-Token wurde vom Dienst abgelehnt.",
+      "unknown": "Unerwarteter Fehler – siehe Home-Assistant-Logs."
+    },
+    "abort": {
+      "already_configured": "Diese Portfolio-Valuator-Instanz ist bereits konfiguriert.",
+      "reauth_successful": "Re-Authentifizierung erfolgreich.",
+      "reauth_unknown_entry": "Der Config-Entry konnte nicht mehr gefunden werden."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ws_connected": {
+        "name": "WebSocket verbunden"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Portfolio-Valuator-Einstellungen",
+        "description": "Verbindungs- und Polling-Verhalten anpassen. Änderungen laden die Integration neu.",
+        "data": {
+          "api_token": "API-Token (leer lassen zum Entfernen)",
+          "verify_ssl": "SSL-Zertifikat prüfen",
+          "scan_interval": "REST-Polling-Intervall (Sekunden)",
+          "rest_fallback": "Periodisches REST-Polling auch bei aktiver WebSocket-Verbindung"
+        }
+      }
+    },
+    "error": {
+      "scan_interval_out_of_range": "Polling-Intervall muss zwischen 10 und 3600 Sekunden liegen."
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Sofort aktualisieren",
+      "description": "Stößt eine sofortige REST-Aktualisierung der Portfolio-Valuator-Daten an.",
+      "fields": {
+        "entry_id": {
+          "name": "Config-Entry-ID",
+          "description": "Optional. Auf einen einzelnen Config-Entry beschränken."
+        }
+      }
+    },
+    "restart_stream": {
+      "name": "WebSocket-Stream neu starten",
+      "description": "Trennt die WebSocket-Verbindung zum Portfolio-Valuator-Dienst und baut sie neu auf.",
+      "fields": {
+        "entry_id": {
+          "name": "Config-Entry-ID",
+          "description": "Optional. Auf einen einzelnen Config-Entry beschränken."
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Portfolio Valuator: Authentifizierung fehlgeschlagen",
+      "description": "Das API-Token für **{title}** ({host}) wurde vom Portfolio-Valuator-Dienst abgelehnt. Öffne die Integrations-Einstellungen und aktualisiere das Token, um den Zugriff wiederherzustellen."
+    }
+  }
+}

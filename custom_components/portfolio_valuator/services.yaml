@@ -1,0 +1,31 @@
+force_refresh:
+  name: Force refresh
+  description: >
+    Trigger an immediate REST poll of the configured Portfolio Valuator service(s)
+    to refresh valuations, watchlist prices and FX rates.
+  fields:
+    entry_id:
+      name: Config entry
+      description: >
+        Optional. Limit the refresh to a single Portfolio Valuator config entry.
+        If omitted, all configured entries are refreshed.
+      required: false
+      selector:
+        config_entry:
+          integration: portfolio_valuator
+
+restart_stream:
+  name: Restart WebSocket stream
+  description: >
+    Tear down and re-establish the WebSocket connection to the Portfolio Valuator
+    service. Useful after network blips or reverse-proxy restarts.
+  fields:
+    entry_id:
+      name: Config entry
+      description: >
+        Optional. Limit the restart to a single Portfolio Valuator config entry.
+        If omitted, all configured entries are restarted.
+      required: false
+      selector:
+        config_entry:
+          integration: portfolio_valuator

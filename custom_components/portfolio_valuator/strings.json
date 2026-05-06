@@ -1,0 +1,86 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Portfolio Valuator instance is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "reauth_unknown_entry": "The config entry could no longer be found."
+    },
+    "step": {
+      "user": {
+        "title": "Connect to Portfolio Valuator",
+        "description": "Enter the connection details for your Portfolio Valuator service. The API token is only required if the service has one configured.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "Use HTTPS / WSS",
+          "verify_ssl": "Verify SSL certificate",
+          "api_token": "API token (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Portfolio Valuator",
+        "description": "The API token for **{host}** was rejected. Enter a new token to restore access.",
+        "data": {
+          "api_token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Portfolio Valuator service.",
+      "invalid_auth": "The API token was rejected by the service.",
+      "unknown": "Unexpected error – see Home Assistant logs."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ws_connected": {
+        "name": "WebSocket connected"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Portfolio Valuator options",
+        "description": "Adjust connection and polling behaviour. Changes reload the integration.",
+        "data": {
+          "api_token": "API token (leave empty to remove)",
+          "verify_ssl": "Verify SSL certificate",
+          "scan_interval": "REST poll interval (seconds)",
+          "rest_fallback": "Periodic REST poll while WebSocket is connected"
+        }
+      }
+    },
+    "error": {
+      "scan_interval_out_of_range": "Scan interval must be between 10 and 3600 seconds."
+    }
+  },
+  "services": {
+    "force_refresh": {
+      "name": "Force refresh",
+      "description": "Trigger an immediate REST refresh of the Portfolio Valuator data.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Optional. Limit to a single config entry."
+        }
+      }
+    },
+    "restart_stream": {
+      "name": "Restart WebSocket stream",
+      "description": "Reconnect the WebSocket to the Portfolio Valuator service.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Optional. Limit to a single config entry."
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Portfolio Valuator: authentication failed",
+      "description": "The API token for **{title}** ({host}) was rejected by the Portfolio Valuator service. Open the integration options and update the token to restore access."
+    }
+  }
+}

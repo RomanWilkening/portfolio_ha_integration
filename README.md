@@ -1,1 +1,228 @@
-# portfolio_ha_integration
+# Portfolio Valuator — Home Assistant Integration
+
+Native [Home Assistant](https://www.home-assistant.io/) custom integration for the
+[`portfolio_valuator`](https://github.com/RomanWilkening/portfolio_valuator) service.
+
+It connects directly to the Valuator's REST + **WebSocket** API for live, push-based
+updates of portfolio valuations, watchlist prices and FX rates — replacing the older
+MQTT-Discovery path for HA usage. (MQTT remains optional in the Valuator service for
+other consumers.)
+
+## Features
+
+- **Live updates via WebSocket** — values change in HA the instant the Valuator gets a
+  new quote, no polling needed. Falls back to REST polling automatically when the WS
+  is unreachable.
+- **One device per Portfolio** with sensors for total Market Value, Cost Basis, P/L,
+  P/L %, last valuation timestamp, plus per-position Price / Market Value / P/L / P/L %.
+- **One device per Watchlist item** with a live Price sensor.
+- **One FX Rates device** containing one sensor per configured FX pair.
+- **Long-term statistics ready** — all monetary sensors are exposed with
+  `state_class: measurement`, so HA's statistics layer keeps 5-minute aggregates
+  forever, while the recorder retains every individual quote for the configured
+  retention window.
+- **Optional API token** (`X-API-Key` header / `?api_key=…` for WebSocket).
+- **Auto-reload on structure changes** — when portfolios, positions, watchlist items
+  or FX pairs are added or removed in the Valuator, the integration reloads its
+  entities automatically (requires Valuator with `structure_changed` push event).
+- German + English translations.
+
+## Requirements
+
+- Home Assistant `2024.4.0` or newer.
+- A reachable Portfolio Valuator instance (default port `8000`).
+
+## Installation
+
+### Via HACS (recommended)
+
+1. In HACS go to **Integrations → ⋮ → Custom repositories**.
+2. Add `https://github.com/RomanWilkening/portfolio_ha_integration` as **Integration**.
+3. Install **Portfolio Valuator** and restart Home Assistant.
+
+### Manual
+
+Copy the `custom_components/portfolio_valuator` directory into your Home Assistant
+`config/custom_components/` directory and restart Home Assistant.
+
+## Configuration
+
+Add the integration via **Settings → Devices & Services → Add Integration → Portfolio
+Valuator** and provide:
+
+| Field | Description |
+|---|---|
+| Host | Hostname or IP of the Valuator service |
+| Port | Default `8000` |
+| Use HTTPS / WSS | Enable for TLS-terminated reverse-proxy setups |
+| Verify SSL certificate | Disable only for self-signed certs |
+| API token (optional) | Required if the Valuator was set up with an `api_token` |
+
+The integration will connect to `/api/health` (or fall back to `/api/portfolios`) to
+verify the connection.
+
+### Options
+
+After setup, the integration's **Configure** button opens an options flow where you
+can change the **API token**, toggle **SSL verification**, set the
+**REST poll interval** (default 60 s, range 10–3600 s) and disable the periodic
+**REST fallback** while the WebSocket is healthy. Saving the form reloads the
+integration automatically.
+
+## Entities
+
+For a portfolio named *Depot* the following entities are created (translation keys
+omitted; HA will auto-prefix the device name):
+
+- `sensor.portfolio_depot_market_value`
+- `sensor.portfolio_depot_cost_basis`
+- `sensor.portfolio_depot_profit_loss`
+- `sensor.portfolio_depot_profit_loss_pct`
+- `sensor.portfolio_depot_valued_at`
+- For every position in the portfolio: price, market value, P/L and P/L %.
+
+Watchlist items become individual devices (`Watchlist: <label>`) with a single
+`Price` sensor each.
+
+FX rates land on a single `Portfolio Valuator – FX Rates` device, one sensor per pair.
+
+## How push updates work
+
+The integration opens a single WebSocket to `/ws` per configured Valuator instance
+and processes the following frame types:
+
+- `snapshot` (initial dump on connect)
+- `valuations` (full re-bewertung after a quote tick)
+- `quote` (single instrument update — merged into the watchlist cache)
+- `structure_changed` (CRUD on portfolios / positions / watchlist / FX → triggers
+  an entry reload so new devices appear and removed ones disappear without a HA
+  restart). Requires Valuator support.
+
+A 25-second WebSocket heartbeat plus exponential-backoff reconnect (2 → 60 s) keep
+the link alive across reverse-proxy idle timeouts. While the WebSocket is healthy
+the periodic REST poll is still used (every 60 s) as a safety net for fields not
+covered by every WS frame.
+
+## Long-term statistics
+
+All monetary sensors carry `state_class: measurement` (and a `device_class` of
+`monetary` where appropriate). This means:
+
+- The HA **recorder** stores every individual state change for its configured
+  retention window — perfect for detailed apex-charts / mini-graph views over the
+  last few days.
+- The HA **long-term statistics** engine stores 5-minute mean/min/max aggregates
+  *forever*, which is what the standard *Statistics graph* card and the Energy /
+  Statistics dashboard use.
+
+A single entity therefore covers both the detailed and the long-term view.
+
+## Services
+
+The integration registers two services:
+
+| Service | Purpose |
+|---|---|
+| `portfolio_valuator.force_refresh` | Trigger an immediate REST refresh of valuations / watchlist / FX. |
+| `portfolio_valuator.restart_stream` | Tear down and re-establish the WebSocket connection. |
+
+Both accept an optional `entry_id` field to limit the action to a single
+configured Valuator instance.
+
+## Frontend card
+
+A bundled, dependency-free Lovelace card (`portfolio-valuator-card`) ships with the
+integration and is auto-served at `/portfolio_valuator_frontend/portfolio-valuator-card.js`.
+
+- **Lovelace storage mode** (default): the integration auto-registers the resource
+  on first load — no manual step needed; just add the card to a dashboard.
+- **Lovelace YAML mode**: add the resource yourself:
+
+  ```yaml
+  lovelace:
+    resources:
+      - url: /portfolio_valuator_frontend/portfolio-valuator-card.js
+        type: module
+  ```
+
+Card usage:
+
+```yaml
+type: custom:portfolio-valuator-card
+title: Depots
+# Optional — auto-discovered if omitted:
+# entities:
+#   - sensor.portfolio_depot_market_value
+```
+
+The card shows one row per portfolio with market value, signed P/L and P/L % and
+opens the More-Info dialog on click.
+
+## Lovelace examples
+
+A long-term statistics graph for a portfolio's market value:
+
+```yaml
+type: statistics-graph
+title: Depot – Marktwert (90 Tage)
+entities:
+  - sensor.portfolio_depot_market_value
+period: hour
+days_to_show: 90
+stat_types:
+  - mean
+  - min
+  - max
+```
+
+A live mini-card with the current P/L and percentage:
+
+```yaml
+type: glance
+title: Depot live
+entities:
+  - entity: sensor.portfolio_depot_market_value
+    name: Marktwert
+  - entity: sensor.portfolio_depot_profit_loss
+    name: P/L
+  - entity: sensor.portfolio_depot_profit_loss_pct
+    name: P/L %
+```
+
+A high-resolution chart of a watchlist instrument (requires the
+[`apexcharts-card`](https://github.com/RomenRyu/apexcharts-card) HACS frontend
+plugin):
+
+```yaml
+type: custom:apexcharts-card
+header:
+  title: BTC live
+  show: true
+graph_span: 24h
+series:
+  - entity: sensor.watchlist_btc_price
+    type: line
+    stroke_width: 2
+```
+
+## Troubleshooting
+
+Enable debug logs:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.portfolio_valuator: debug
+```
+
+Common issues:
+
+- *Cannot connect* — verify host/port and that `curl http://<host>:<port>/api/portfolios`
+  works from the HA host.
+- *Invalid auth* — the Valuator has an `api_token` configured; copy it into the
+  integration options.
+
+## License
+
+MIT
