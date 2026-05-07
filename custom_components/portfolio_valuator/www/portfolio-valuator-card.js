@@ -20,7 +20,7 @@
  * ``position_id``, ``watch_id``, ``fx_id``). The renderer simply walks
  * ``hass.states`` and groups by those tags – no per-user setup needed.
  */
-const CARD_VERSION = "0.2.2";
+const CARD_VERSION = "0.2.3";
 const INTEGRATION = "portfolio_valuator";
 
 // ----------------------------------------------------------------- formatting
@@ -1011,7 +1011,20 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     // number, so normalise to strings for the membership check — otherwise
     // every entry would be considered "unknown" and dropped on every render,
     // causing expanded positions to snap shut.
-    if (this._openPositions.size) {
+    //
+    // ⚠️ The cleanup is *only* safe to run when the model actually contains
+    // portfolios. ``hass.states`` is transiently empty for the integration
+    // during entry reloads (the ``structure_changed`` WS frame, options
+    // changes, or any ``async_reload`` call removes every sensor before
+    // re-adding them), during the brief window where the panel mounts
+    // before sensors are loaded, and during WebSocket reconnect races.
+    // In those moments ``model.portfolios`` is ``[]`` and ``model.present``
+    // is ``false``. Running the cleanup then would delete every id we are
+    // tracking, and once the sensors come back the next render would show
+    // every previously-expanded portfolio collapsed — the exact symptom we
+    // keep getting reports of. Skip the cleanup in that case; the open-set
+    // is bounded by the (tiny) number of portfolios a user actually has.
+    if (this._openPositions.size && model.present && model.portfolios.length) {
       const known = new Set(model.portfolios.map((p) => String(p.id)));
       for (const pid of this._openPositions) {
         if (!known.has(pid)) this._openPositions.delete(pid);
