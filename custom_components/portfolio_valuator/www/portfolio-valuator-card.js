@@ -20,7 +20,7 @@
  * ``position_id``, ``watch_id``, ``fx_id``). The renderer simply walks
  * ``hass.states`` and groups by those tags – no per-user setup needed.
  */
-const CARD_VERSION = "0.2.3";
+const CARD_VERSION = "0.3.0";
 const INTEGRATION = "portfolio_valuator";
 
 // ----------------------------------------------------------------- formatting
@@ -618,12 +618,13 @@ function renderHtml(model, opts) {
     const rows = model.portfolios.map((pf) => {
       const cur = pf.currency || "EUR";
       const s = sign(pf.totals.pnl);
+      const pid = escapeHtml(String(pf.id));
       return `
         <div class="pv-compact-row" data-entity="${escapeHtml(pf.entityIds.market_value || "")}">
           <div class="name">${escapeHtml(pf.name || `Portfolio ${pf.id}`)}</div>
-          <div class="num">${escapeHtml(fmtMoney(pf.totals.market_value, cur))}</div>
-          <div class="num ${s}">${escapeHtml(fmtSignedMoney(pf.totals.pnl, cur))}</div>
-          <div class="num ${s}">${escapeHtml(fmtPct(pf.totals.pnl_pct))}</div>
+          <div class="num" data-pv-bind="portfolio.${pid}.market_value">${escapeHtml(fmtMoney(pf.totals.market_value, cur))}</div>
+          <div class="num ${s}" data-pv-bind="portfolio.${pid}.pnl">${escapeHtml(fmtSignedMoney(pf.totals.pnl, cur))}</div>
+          <div class="num ${s}" data-pv-bind="portfolio.${pid}.pnl_pct">${escapeHtml(fmtPct(pf.totals.pnl_pct))}</div>
         </div>
       `;
     }).join("");
@@ -654,15 +655,17 @@ function renderHtml(model, opts) {
     : svc.ws_connected === false
       ? STR_DE.wsDisconnected
       : STR_DE.wsUnknown;
+  const versionVisible = !!svc.version;
+  const lastValVisible = !!svc.lastValuedAt;
   const serviceCard = `
     <div class="pv-section">
       <div class="pv-section-title">${STR_DE.service}</div>
       <div class="pv-card pv-status-row">
-        <div class="pv-status-pill ${svcCls}" data-entity="${escapeHtml(svc.ws_eid || "")}">
-          <span class="dot"></span><span>${svcLabel}</span>
+        <div class="pv-status-pill ${svcCls}" data-entity="${escapeHtml(svc.ws_eid || "")}" data-pv-bind="service.ws.pill">
+          <span class="dot"></span><span data-pv-bind="service.ws.label">${svcLabel}</span>
         </div>
-        ${svc.version ? `<div class="pv-status-meta">${STR_DE.serviceVersion}: ${escapeHtml(svc.version)}</div>` : ""}
-        ${svc.lastValuedAt ? `<div class="pv-status-meta">${STR_DE.lastValuation}: ${escapeHtml(fmtTimestamp(svc.lastValuedAt))}</div>` : ""}
+        <div class="pv-status-meta" data-pv-bind="service.version" style="${versionVisible ? "" : "display:none"}">${versionVisible ? `${STR_DE.serviceVersion}: ${escapeHtml(svc.version)}` : ""}</div>
+        <div class="pv-status-meta" data-pv-bind="service.lastValuedAt" style="${lastValVisible ? "" : "display:none"}">${lastValVisible ? `${STR_DE.lastValuation}: ${escapeHtml(fmtTimestamp(svc.lastValuedAt))}` : ""}</div>
       </div>
     </div>
   `;
@@ -702,22 +705,24 @@ function renderPortfolioCard(pf, opts) {
   const cur = pf.currency || "EUR";
   const s = sign(pf.totals.pnl);
   const openSet = (opts && opts.openPositions) || null;
-  // ``_openPositions`` stores ids as strings (they are read back from the
-  // ``data-pf-id`` DOM attribute in ``_togglePositions``), while ``pf.id``
-  // typically arrives as a number from ``attrs.portfolio_id``. Always compare
-  // via the string form so the open-state survives WebSocket-driven re-renders.
+  // ``_openPositions`` is only consulted when we *structurally* (re)build the
+  // DOM — so it's purely a safety net for genuine rebuilds (mount, structural
+  // change, reload). During normal WebSocket-driven value pushes the DOM is
+  // patched in place (see ``_applyValues``) and the toggle node keeps its
+  // ``data-open`` attribute simply because we never replace it.
   const isOpen = openSet ? openSet.has(String(pf.id)) : false;
-  const tile = (label, valueHtml, subHtml, eid, big) => `
+  const pid = escapeHtml(String(pf.id));
+  const tile = (label, valueHtml, subHtml, eid, big, bindKey, subBindKey) => `
     <div class="pv-tile" data-entity="${escapeHtml(eid || "")}">
       <div class="pv-tile-label">${label}</div>
-      <div class="pv-tile-value ${big ? "big" : ""}">${valueHtml}</div>
-      ${subHtml ? `<div class="pv-tile-sub">${subHtml}</div>` : ""}
+      <div class="pv-tile-value ${big ? "big" : ""}"${bindKey ? ` data-pv-bind="${bindKey}"` : ""}>${valueHtml}</div>
+      ${subHtml != null ? `<div class="pv-tile-sub"${subBindKey ? ` data-pv-bind="${subBindKey}"` : ""}>${subHtml}</div>` : ""}
     </div>
   `;
   const positionsHtml = pf.positions.length === 0
     ? ""
     : `
-      <div class="pv-positions" data-pf-id="${escapeHtml(String(pf.id))}" data-open="${isOpen ? "true" : "false"}">
+      <div class="pv-positions" data-pf-id="${pid}" data-open="${isOpen ? "true" : "false"}">
         <div class="pv-positions-toggle">
           <span class="chev">▶</span>
           <span class="label-show">${isOpen ? STR_DE.hidePositions : STR_DE.showPositions}</span>
@@ -736,31 +741,34 @@ function renderPortfolioCard(pf, opts) {
               </tr>
             </thead>
             <tbody>
-              ${pf.positions.map((pos) => renderPositionRow(pos, cur)).join("")}
+              ${pf.positions.map((pos) => renderPositionRow(pos, cur, pf.id)).join("")}
             </tbody>
           </table>
         </div>
       </div>
     `;
+  const missingFxVisible = !!(pf.missing_fx && pf.missing_fx.length);
   return `
     <div class="pv-card">
       <div class="pv-portfolio-head">
         <div class="pv-portfolio-name">${escapeHtml(pf.name || `Portfolio ${pf.id}`)}</div>
-        <div class="pv-portfolio-stamp">${pf.valued_at ? escapeHtml(fmtTimestamp(pf.valued_at)) : ""}</div>
+        <div class="pv-portfolio-stamp" data-pv-bind="portfolio.${pid}.valued_at">${pf.valued_at ? escapeHtml(fmtTimestamp(pf.valued_at)) : ""}</div>
       </div>
       <div class="pv-portfolio-totals">
-        ${tile(STR_DE.marketValue, escapeHtml(fmtMoney(pf.totals.market_value, cur)), "", pf.entityIds.market_value, true)}
-        ${tile(STR_DE.costBasis, escapeHtml(fmtMoney(pf.totals.cost_basis, cur)), "", pf.entityIds.cost_basis, false)}
-        ${tile(STR_DE.pnl, `<span class="${s}">${escapeHtml(fmtSignedMoney(pf.totals.pnl, cur))}</span>`,
-               `<span class="${s}">${escapeHtml(fmtPct(pf.totals.pnl_pct))}</span>`, pf.entityIds.pnl, false)}
+        ${tile(STR_DE.marketValue, escapeHtml(fmtMoney(pf.totals.market_value, cur)), null, pf.entityIds.market_value, true, `portfolio.${pid}.market_value`)}
+        ${tile(STR_DE.costBasis, escapeHtml(fmtMoney(pf.totals.cost_basis, cur)), null, pf.entityIds.cost_basis, false, `portfolio.${pid}.cost_basis`)}
+        ${tile(STR_DE.pnl,
+          `<span class="${s}" data-pv-bind="portfolio.${pid}.pnl">${escapeHtml(fmtSignedMoney(pf.totals.pnl, cur))}</span>`,
+          `<span class="${s}" data-pv-bind="portfolio.${pid}.pnl_pct">${escapeHtml(fmtPct(pf.totals.pnl_pct))}</span>`,
+          pf.entityIds.pnl, false)}
       </div>
-      ${pf.missing_fx && pf.missing_fx.length ? `<div class="pv-warning">${STR_DE.fxMissing}: ${escapeHtml(pf.missing_fx.join(", "))}</div>` : ""}
+      <div class="pv-warning" data-pv-bind="portfolio.${pid}.missing_fx" style="${missingFxVisible ? "" : "display:none"}">${missingFxVisible ? `${STR_DE.fxMissing}: ${escapeHtml(pf.missing_fx.join(", "))}` : ""}</div>
       ${positionsHtml}
     </div>
   `;
 }
 
-function renderPositionRow(pos, fallbackCurrency) {
+function renderPositionRow(pos, fallbackCurrency, pfId) {
   const cur = pos.currency || fallbackCurrency || "EUR";
   const s = sign(pos.pnl);
   const eid = pos.entityIds.price || pos.entityIds.market_value || pos.entityIds.pnl || "";
@@ -768,6 +776,8 @@ function renderPositionRow(pos, fallbackCurrency) {
   if (pos.instrument_code) subParts.push(escapeHtml(pos.instrument_code));
   if (pos.instrument_isin) subParts.push(escapeHtml(pos.instrument_isin));
   if (pos.price_source) subParts.push(escapeHtml(pos.price_source));
+  const pid = escapeHtml(String(pfId));
+  const posid = escapeHtml(String(pos.id));
   return `
     <tr class="clickable" data-entity="${escapeHtml(eid)}">
       <td>
@@ -776,25 +786,27 @@ function renderPositionRow(pos, fallbackCurrency) {
           ${subParts.length ? `<span class="pv-pos-sub">${subParts.join(" · ")}</span>` : ""}
         </div>
       </td>
-      <td>${escapeHtml(fmtNumber(pos.quantity, 4))}</td>
-      <td>${escapeHtml(fmtMoney(pos.price, cur))}</td>
-      <td>${escapeHtml(fmtMoney(pos.market_value, cur))}</td>
-      <td class="${s}">${escapeHtml(fmtSignedMoney(pos.pnl, cur))}</td>
-      <td class="${s}">${escapeHtml(fmtPct(pos.pnl_pct))}</td>
+      <td data-pv-bind="position.${pid}.${posid}.qty">${escapeHtml(fmtNumber(pos.quantity, 4))}</td>
+      <td data-pv-bind="position.${pid}.${posid}.price">${escapeHtml(fmtMoney(pos.price, cur))}</td>
+      <td data-pv-bind="position.${pid}.${posid}.market_value">${escapeHtml(fmtMoney(pos.market_value, cur))}</td>
+      <td class="${s}" data-pv-bind="position.${pid}.${posid}.pnl">${escapeHtml(fmtSignedMoney(pos.pnl, cur))}</td>
+      <td class="${s}" data-pv-bind="position.${pid}.${posid}.pnl_pct">${escapeHtml(fmtPct(pos.pnl_pct))}</td>
     </tr>
   `;
 }
 
 function renderWatchTile(it) {
   const label = it.label || it.name || it.code || `#${it.id}`;
+  const wid = escapeHtml(String(it.id));
+  const sourceVisible = !!it.source;
   return `
     <div class="pv-tile-card" data-entity="${escapeHtml(it.eid)}">
       <div class="head">
         <div class="label">${escapeHtml(label)}</div>
         ${it.code ? `<div class="code">${escapeHtml(it.code)}</div>` : ""}
       </div>
-      <div class="val">${escapeHtml(fmtMoney(it.price, it.currency))}</div>
-      ${it.source ? `<div class="src">${STR_DE.source}: ${escapeHtml(it.source)}</div>` : ""}
+      <div class="val" data-pv-bind="watchlist.${wid}.price">${escapeHtml(fmtMoney(it.price, it.currency))}</div>
+      <div class="src" data-pv-bind="watchlist.${wid}.source" style="${sourceVisible ? "" : "display:none"}">${sourceVisible ? `${STR_DE.source}: ${escapeHtml(it.source)}` : ""}</div>
     </div>
   `;
 }
@@ -812,18 +824,96 @@ function renderFxTable(rows) {
         </tr>
       </thead>
       <tbody>
-        ${rows.map((r) => `
+        ${rows.map((r) => {
+          const fid = escapeHtml(String(r.id));
+          return `
           <tr class="clickable" data-entity="${escapeHtml(r.eid)}">
             <td>${escapeHtml(r.code || `${r.base}/${r.quote}`)}</td>
             <td>${escapeHtml(r.base || "")}</td>
             <td>${escapeHtml(r.quote || "")}</td>
-            <td>${escapeHtml(fmtNumber(r.price, 6))}</td>
-            <td>${escapeHtml(r.source || "")}</td>
+            <td data-pv-bind="fx.${fid}.price">${escapeHtml(fmtNumber(r.price, 6))}</td>
+            <td data-pv-bind="fx.${fid}.source">${escapeHtml(r.source || "")}</td>
           </tr>
-        `).join("")}
+        `;
+        }).join("")}
       </tbody>
     </table>
   `;
+}
+
+// =========================================================== value patching
+//
+// Build a flat key → { text, sign?, visible? } map from the model. The keys
+// match the ``data-pv-bind`` markers stamped during structural rendering.
+// During WebSocket-driven updates we walk the existing DOM, look each
+// element's bind key up here and patch ``textContent`` / sign classes /
+// visibility in place — without touching the surrounding structure. Because
+// the toggle wrapper, scroll container, etc. keep their identity, expanded
+// position tables stay open across any number of value updates.
+function buildValueMap(model) {
+  const m = new Map();
+
+  for (const pf of model.portfolios) {
+    const cur = pf.currency || "EUR";
+    const pid = String(pf.id);
+    const pnlSign = sign(pf.totals.pnl);
+    m.set(`portfolio.${pid}.market_value`, { text: fmtMoney(pf.totals.market_value, cur) });
+    m.set(`portfolio.${pid}.cost_basis`, { text: fmtMoney(pf.totals.cost_basis, cur) });
+    m.set(`portfolio.${pid}.pnl`, { text: fmtSignedMoney(pf.totals.pnl, cur), sign: pnlSign });
+    m.set(`portfolio.${pid}.pnl_pct`, { text: fmtPct(pf.totals.pnl_pct), sign: pnlSign });
+    m.set(`portfolio.${pid}.valued_at`, { text: pf.valued_at ? fmtTimestamp(pf.valued_at) : "" });
+    const missingFx = pf.missing_fx && pf.missing_fx.length;
+    m.set(`portfolio.${pid}.missing_fx`, {
+      text: missingFx ? `${STR_DE.fxMissing}: ${pf.missing_fx.join(", ")}` : "",
+      visible: !!missingFx,
+    });
+    for (const pos of pf.positions) {
+      const pcur = pos.currency || cur;
+      const posid = String(pos.id);
+      const posSign = sign(pos.pnl);
+      m.set(`position.${pid}.${posid}.qty`, { text: fmtNumber(pos.quantity, 4) });
+      m.set(`position.${pid}.${posid}.price`, { text: fmtMoney(pos.price, pcur) });
+      m.set(`position.${pid}.${posid}.market_value`, { text: fmtMoney(pos.market_value, pcur) });
+      m.set(`position.${pid}.${posid}.pnl`, { text: fmtSignedMoney(pos.pnl, pcur), sign: posSign });
+      m.set(`position.${pid}.${posid}.pnl_pct`, { text: fmtPct(pos.pnl_pct), sign: posSign });
+    }
+  }
+
+  for (const w of model.watchlist) {
+    const wid = String(w.id);
+    m.set(`watchlist.${wid}.price`, { text: fmtMoney(w.price, w.currency) });
+    m.set(`watchlist.${wid}.source`, {
+      text: w.source ? `${STR_DE.source}: ${w.source}` : "",
+      visible: !!w.source,
+    });
+  }
+
+  for (const fx of model.fx) {
+    const fid = String(fx.id);
+    m.set(`fx.${fid}.price`, { text: fmtNumber(fx.price, 6) });
+    m.set(`fx.${fid}.source`, { text: fx.source || "" });
+  }
+
+  const svc = model.service;
+  m.set(`service.ws.label`, {
+    text: svc.ws_connected === true
+      ? STR_DE.wsConnected
+      : svc.ws_connected === false
+        ? STR_DE.wsDisconnected
+        : STR_DE.wsUnknown,
+  });
+  m.set(`service.ws.pill`, {
+    cls: svc.ws_connected === true ? "ok" : svc.ws_connected === false ? "bad" : "",
+  });
+  m.set(`service.version`, {
+    text: svc.version ? `${STR_DE.serviceVersion}: ${svc.version}` : "",
+    visible: !!svc.version,
+  });
+  m.set(`service.lastValuedAt`, {
+    text: svc.lastValuedAt ? `${STR_DE.lastValuation}: ${fmtTimestamp(svc.lastValuedAt)}` : "",
+    visible: !!svc.lastValuedAt,
+  });
+  return m;
 }
 
 // =========================================================== shared element
@@ -832,27 +922,23 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._compact = false;
-    this._lastSig = null;
-    // Persists which portfolios have their positions table expanded so that
-    // websocket-driven re-renders don't snap them shut on every push.
+    this._lastStructSig = null;
+    this._lastValueSig = null;
+    // Tracks which portfolios have their positions table expanded. With the
+    // structural/value-render split (see ``_render``) this is **only**
+    // consulted on a genuine structural rebuild — i.e. mount, structural
+    // model change (added/removed portfolio, position, watchlist or fx
+    // entry), or a config-entry reload. During normal WebSocket-driven
+    // value pushes the toggle node keeps its identity (and therefore its
+    // ``data-open`` attribute) because we patch values in place instead of
+    // rewriting ``shadowRoot.innerHTML``.
     this._openPositions = new Set();
 
-    // Render coalescing. ``set hass`` is called on every Home Assistant state
-    // update and the websocket-backed valuator pushes can fire several times
-    // per second. Without batching we would rewrite ``shadowRoot.innerHTML``
-    // many times per second, which both flickers the layout and (more
-    // importantly) destroys the toggle element a user is currently clicking,
-    // dropping their click event in the process.
+    // Render coalescing. ``set hass`` is called on every Home Assistant
+    // state update; the WebSocket-backed valuator pushes can fire several
+    // times per second. We coalesce work into one frame so we don't run
+    // ``buildModel`` more often than the browser repaints.
     this._renderRaf = 0;
-    this._renderDeferred = false;
-
-    // True while the user holds a pointer down inside the card. We pause
-    // re-renders for the duration of the gesture so the click target the
-    // browser is tracking stays connected from ``mousedown`` to ``mouseup``.
-    this._pointerActive = false;
-    // Hard safety cap so a missed pointerup (e.g. focus loss, dragged off the
-    // card) cannot freeze updates indefinitely.
-    this._pointerSafetyTimer = 0;
 
     this._setupDelegation();
   }
@@ -870,7 +956,10 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._compact = !!this._config.compact;
-    this._lastSig = null;
+    // Force a structural rebuild on the next render — the compact flag
+    // changes which template branch we render.
+    this._lastStructSig = null;
+    this._lastValueSig = null;
     this._scheduleRender();
   }
 
@@ -884,34 +973,16 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
       cancelAnimationFrame(this._renderRaf);
       this._renderRaf = 0;
     }
-    if (this._pointerSafetyTimer) {
-      clearTimeout(this._pointerSafetyTimer);
-      this._pointerSafetyTimer = 0;
-    }
-    if (this._releaseFromWindow) {
-      window.removeEventListener("pointerup", this._releaseFromWindow, true);
-      window.removeEventListener("pointercancel", this._releaseFromWindow, true);
-    }
   }
 
   // ------------------------------------------------------------- delegation
   //
   // We attach a single click handler on the shadow root instead of wiring
   // listeners per element on every render. The handler survives every
-  // ``innerHTML`` rewrite so user clicks always reach a live listener.
+  // structural rewrite, but with the new in-place value patching it almost
+  // never has to: the toggle element a user is clicking stays in the DOM.
   _setupDelegation() {
     const root = this.shadowRoot;
-
-    root.addEventListener("pointerdown", () => this._beginPointer(), true);
-    // Local releases cover the common case quickly.
-    const localRelease = () => this._endPointer();
-    root.addEventListener("pointerup", localRelease, true);
-    root.addEventListener("pointercancel", localRelease, true);
-    // Window-level release is the safety net for when the pointer leaves the
-    // shadow root (or the host element) before being released.
-    this._releaseFromWindow = () => this._endPointer();
-    window.addEventListener("pointerup", this._releaseFromWindow, true);
-    window.addEventListener("pointercancel", this._releaseFromWindow, true);
 
     root.addEventListener("click", (ev) => {
       const path = ev.composedPath();
@@ -933,29 +1004,6 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
         }
       }
     });
-  }
-
-  _beginPointer() {
-    this._pointerActive = true;
-    if (this._pointerSafetyTimer) clearTimeout(this._pointerSafetyTimer);
-    // Cap the pause so we always resume rendering even if pointerup is lost.
-    this._pointerSafetyTimer = setTimeout(() => {
-      this._pointerSafetyTimer = 0;
-      this._endPointer();
-    }, 500);
-  }
-
-  _endPointer() {
-    if (!this._pointerActive) return;
-    this._pointerActive = false;
-    if (this._pointerSafetyTimer) {
-      clearTimeout(this._pointerSafetyTimer);
-      this._pointerSafetyTimer = 0;
-    }
-    if (this._renderDeferred) {
-      this._renderDeferred = false;
-      this._scheduleRender();
-    }
   }
 
   _togglePositions(toggleEl) {
@@ -980,60 +1028,131 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     if (this._renderRaf) return;
     this._renderRaf = requestAnimationFrame(() => {
       this._renderRaf = 0;
-      if (this._pointerActive) {
-        // Don't yank the DOM out from under an active click gesture; the
-        // pending render will be flushed in ``_endPointer``.
-        this._renderDeferred = true;
-        return;
-      }
       this._render();
+    });
+  }
+
+  // Identifiers + counts + ordering — anything that actually changes which
+  // DOM nodes need to exist. Numeric values like prices, market values or
+  // P/L do **not** belong here: they are patched in place by
+  // ``_applyValues``.
+  _structuralSignature(model) {
+    return JSON.stringify({
+      compact: this._compact,
+      present: model.present,
+      pf: model.portfolios.map((p) => [
+        String(p.id),
+        p.name || "",
+        p.currency || "",
+        !!(p.missing_fx && p.missing_fx.length),
+        p.positions.map((pos) => [
+          String(pos.id),
+          pos.name || "",
+          pos.instrument_code || "",
+          pos.instrument_isin || "",
+          pos.instrument_name || "",
+          pos.price_source || "",
+          pos.entityIds.price || pos.entityIds.market_value || pos.entityIds.pnl || "",
+        ]),
+      ]),
+      wl: model.watchlist.map((w) => [
+        String(w.id), w.label || "", w.code || "", w.name || "", w.currency || "", w.eid || "",
+      ]),
+      fx: model.fx.map((f) => [
+        String(f.id), f.code || "", f.base || "", f.quote || "", f.eid || "",
+      ]),
+      svc: { ws_eid: model.service.ws_eid || "" },
+    });
+  }
+
+  // Cheap signature over everything bindable, used purely to short-circuit
+  // ``_applyValues`` when nothing actually changed.
+  _valueSignature(model) {
+    return JSON.stringify({
+      pf: model.portfolios.map((p) => [
+        String(p.id),
+        p.totals.market_value, p.totals.cost_basis, p.totals.pnl, p.totals.pnl_pct,
+        p.valued_at || "",
+        (p.missing_fx || []).slice().sort(),
+        p.positions.map((pos) => [
+          String(pos.id), pos.quantity, pos.price, pos.market_value, pos.pnl, pos.pnl_pct,
+        ]),
+      ]),
+      wl: model.watchlist.map((w) => [String(w.id), w.price, w.source || ""]),
+      fx: model.fx.map((f) => [String(f.id), f.price, f.source || ""]),
+      svc: {
+        ws: model.service.ws_connected,
+        v: model.service.version || "",
+        lva: model.service.lastValuedAt || "",
+      },
     });
   }
 
   _render() {
     if (!this._hass) return;
     const model = buildModel(this._hass);
-    // Cheap signature so we don't reflow on unrelated state changes.
-    const sig = JSON.stringify({
-      pf: model.portfolios.map((p) => [p.id, p.totals, p.valued_at, p.positions.map((x) => [x.id, x.price, x.market_value, x.pnl, x.pnl_pct, x.quantity])]),
-      wl: model.watchlist.map((w) => [w.id, w.price, w.source]),
-      fx: model.fx.map((f) => [f.id, f.price, f.source]),
-      svc: model.service,
-      compact: this._compact,
-      present: model.present,
-    });
-    if (sig === this._lastSig) return;
-    this._lastSig = sig;
+    const structSig = this._structuralSignature(model);
+    const valueSig = this._valueSignature(model);
 
-    // Drop tracked open-state for portfolios that are no longer present so
-    // the Set cannot grow unbounded across structural changes. The Set keys
-    // are strings (see ``_togglePositions``) while ``p.id`` is usually a
-    // number, so normalise to strings for the membership check — otherwise
-    // every entry would be considered "unknown" and dropped on every render,
-    // causing expanded positions to snap shut.
-    //
-    // ⚠️ The cleanup is *only* safe to run when the model actually contains
-    // portfolios. ``hass.states`` is transiently empty for the integration
-    // during entry reloads (the ``structure_changed`` WS frame, options
-    // changes, or any ``async_reload`` call removes every sensor before
-    // re-adding them), during the brief window where the panel mounts
-    // before sensors are loaded, and during WebSocket reconnect races.
-    // In those moments ``model.portfolios`` is ``[]`` and ``model.present``
-    // is ``false``. Running the cleanup then would delete every id we are
-    // tracking, and once the sensors come back the next render would show
-    // every previously-expanded portfolio collapsed — the exact symptom we
-    // keep getting reports of. Skip the cleanup in that case; the open-set
-    // is bounded by the (tiny) number of portfolios a user actually has.
-    if (this._openPositions.size && model.present && model.portfolios.length) {
-      const known = new Set(model.portfolios.map((p) => String(p.id)));
-      for (const pid of this._openPositions) {
-        if (!known.has(pid)) this._openPositions.delete(pid);
+    if (structSig !== this._lastStructSig) {
+      // Structural change: full rebuild. This drops every existing DOM node
+      // inside the shadow root, so we have to restore the open-set safety
+      // net afterwards (the rebuilt template already honours the set in
+      // ``renderPortfolioCard``).
+      //
+      // Drop tracked open-state for portfolios that disappeared. Skip the
+      // cleanup during transient empty renders (entry reload, panel mount
+      // before sensors arrive, WS reconnect race) so we don't wipe valid
+      // state — see the regression history in PR #4–#7.
+      if (this._openPositions.size && model.present && model.portfolios.length) {
+        const known = new Set(model.portfolios.map((p) => String(p.id)));
+        for (const pid of this._openPositions) {
+          if (!known.has(pid)) this._openPositions.delete(pid);
+        }
       }
+      this.shadowRoot.innerHTML = `<style>${STYLES}</style>${renderHtml(model, { compact: this._compact, openPositions: this._openPositions })}`;
+      this._lastStructSig = structSig;
+      this._lastValueSig = valueSig;
+      this._applyValues(model);
+      return;
     }
 
-    this.shadowRoot.innerHTML = `<style>${STYLES}</style>${renderHtml(model, { compact: this._compact, openPositions: this._openPositions })}`;
-    // No per-element listeners to attach: clicks are handled via delegation
-    // on the shadow root in ``_setupDelegation``.
+    if (valueSig === this._lastValueSig) return;
+    this._lastValueSig = valueSig;
+    this._applyValues(model);
+  }
+
+  // Walk every node carrying a ``data-pv-bind`` marker and patch its
+  // ``textContent`` (and sign / pill class / visibility) in place. The
+  // surrounding structure — including the ``.pv-positions`` toggle wrapper
+  // the user might be interacting with — is never touched.
+  _applyValues(model) {
+    const values = buildValueMap(model);
+    const nodes = this.shadowRoot.querySelectorAll("[data-pv-bind]");
+    for (const node of nodes) {
+      const key = node.getAttribute("data-pv-bind");
+      const v = values.get(key);
+      if (!v) continue;
+      if (typeof v.text === "string" && node.textContent !== v.text) {
+        node.textContent = v.text;
+      }
+      if (v.sign !== undefined) {
+        // A P/L sign can flip between renders (pos ↔ neg ↔ neutral); always
+        // normalise so we never leave a stale colour.
+        node.classList.remove("pos", "neg", "neutral");
+        node.classList.add(v.sign);
+      }
+      if (v.cls !== undefined) {
+        // Update only the status-pill state classes (``ok`` / ``bad`` / none)
+        // via classList so unrelated classes stay intact.
+        node.classList.remove("ok", "bad");
+        if (v.cls) node.classList.add(v.cls);
+      }
+      if (v.visible !== undefined) {
+        const want = v.visible ? "" : "none";
+        if (node.style.display !== want) node.style.display = want;
+      }
+    }
   }
 }
 
