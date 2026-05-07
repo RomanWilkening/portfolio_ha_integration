@@ -20,7 +20,7 @@
  * ``position_id``, ``watch_id``, ``fx_id``). The renderer simply walks
  * ``hass.states`` and groups by those tags – no per-user setup needed.
  */
-const CARD_VERSION = "0.2.1";
+const CARD_VERSION = "0.2.2";
 const INTEGRATION = "portfolio_valuator";
 
 // ----------------------------------------------------------------- formatting
@@ -702,7 +702,11 @@ function renderPortfolioCard(pf, opts) {
   const cur = pf.currency || "EUR";
   const s = sign(pf.totals.pnl);
   const openSet = (opts && opts.openPositions) || null;
-  const isOpen = openSet ? openSet.has(pf.id) : false;
+  // ``_openPositions`` stores ids as strings (they are read back from the
+  // ``data-pf-id`` DOM attribute in ``_togglePositions``), while ``pf.id``
+  // typically arrives as a number from ``attrs.portfolio_id``. Always compare
+  // via the string form so the open-state survives WebSocket-driven re-renders.
+  const isOpen = openSet ? openSet.has(String(pf.id)) : false;
   const tile = (label, valueHtml, subHtml, eid, big) => `
     <div class="pv-tile" data-entity="${escapeHtml(eid || "")}">
       <div class="pv-tile-label">${label}</div>
@@ -1002,9 +1006,13 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     this._lastSig = sig;
 
     // Drop tracked open-state for portfolios that are no longer present so
-    // the Set cannot grow unbounded across structural changes.
+    // the Set cannot grow unbounded across structural changes. The Set keys
+    // are strings (see ``_togglePositions``) while ``p.id`` is usually a
+    // number, so normalise to strings for the membership check — otherwise
+    // every entry would be considered "unknown" and dropped on every render,
+    // causing expanded positions to snap shut.
     if (this._openPositions.size) {
-      const known = new Set(model.portfolios.map((p) => p.id));
+      const known = new Set(model.portfolios.map((p) => String(p.id)));
       for (const pid of this._openPositions) {
         if (!known.has(pid)) this._openPositions.delete(pid);
       }
