@@ -20,7 +20,7 @@
  * ``position_id``, ``watch_id``, ``fx_id``). The renderer simply walks
  * ``hass.states`` and groups by those tags – no per-user setup needed.
  */
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.2.1";
 const INTEGRATION = "portfolio_valuator";
 
 // ----------------------------------------------------------------- formatting
@@ -832,11 +832,30 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     // Persists which portfolios have their positions table expanded so that
     // websocket-driven re-renders don't snap them shut on every push.
     this._openPositions = new Set();
+
+    // Render coalescing. ``set hass`` is called on every Home Assistant state
+    // update and the websocket-backed valuator pushes can fire several times
+    // per second. Without batching we would rewrite ``shadowRoot.innerHTML``
+    // many times per second, which both flickers the layout and (more
+    // importantly) destroys the toggle element a user is currently clicking,
+    // dropping their click event in the process.
+    this._renderRaf = 0;
+    this._renderDeferred = false;
+
+    // True while the user holds a pointer down inside the card. We pause
+    // re-renders for the duration of the gesture so the click target the
+    // browser is tracking stays connected from ``mousedown`` to ``mouseup``.
+    this._pointerActive = false;
+    // Hard safety cap so a missed pointerup (e.g. focus loss, dragged off the
+    // card) cannot freeze updates indefinitely.
+    this._pointerSafetyTimer = 0;
+
+    this._setupDelegation();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    this._scheduleRender();
   }
 
   get hass() {
@@ -848,12 +867,123 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     this._config = config || {};
     this._compact = !!this._config.compact;
     this._lastSig = null;
-    this._render();
+    this._scheduleRender();
   }
 
   // Lovelace card-helper used by the section/grid layouts.
   getCardSize() {
     return 6;
+  }
+
+  disconnectedCallback() {
+    if (this._renderRaf) {
+      cancelAnimationFrame(this._renderRaf);
+      this._renderRaf = 0;
+    }
+    if (this._pointerSafetyTimer) {
+      clearTimeout(this._pointerSafetyTimer);
+      this._pointerSafetyTimer = 0;
+    }
+    if (this._releaseFromWindow) {
+      window.removeEventListener("pointerup", this._releaseFromWindow, true);
+      window.removeEventListener("pointercancel", this._releaseFromWindow, true);
+    }
+  }
+
+  // ------------------------------------------------------------- delegation
+  //
+  // We attach a single click handler on the shadow root instead of wiring
+  // listeners per element on every render. The handler survives every
+  // ``innerHTML`` rewrite so user clicks always reach a live listener.
+  _setupDelegation() {
+    const root = this.shadowRoot;
+
+    root.addEventListener("pointerdown", () => this._beginPointer(), true);
+    // Local releases cover the common case quickly.
+    const localRelease = () => this._endPointer();
+    root.addEventListener("pointerup", localRelease, true);
+    root.addEventListener("pointercancel", localRelease, true);
+    // Window-level release is the safety net for when the pointer leaves the
+    // shadow root (or the host element) before being released.
+    this._releaseFromWindow = () => this._endPointer();
+    window.addEventListener("pointerup", this._releaseFromWindow, true);
+    window.addEventListener("pointercancel", this._releaseFromWindow, true);
+
+    root.addEventListener("click", (ev) => {
+      const path = ev.composedPath();
+      for (const node of path) {
+        if (!(node instanceof Element)) continue;
+        if (node === root) break;
+        if (node.classList && node.classList.contains("pv-positions-toggle")) {
+          ev.stopPropagation();
+          this._togglePositions(node);
+          return;
+        }
+        const eid = node.getAttribute && node.getAttribute("data-entity");
+        if (eid) {
+          ev.stopPropagation();
+          const event = new Event("hass-more-info", { bubbles: true, composed: true });
+          event.detail = { entityId: eid };
+          this.dispatchEvent(event);
+          return;
+        }
+      }
+    });
+  }
+
+  _beginPointer() {
+    this._pointerActive = true;
+    if (this._pointerSafetyTimer) clearTimeout(this._pointerSafetyTimer);
+    // Cap the pause so we always resume rendering even if pointerup is lost.
+    this._pointerSafetyTimer = setTimeout(() => {
+      this._pointerSafetyTimer = 0;
+      this._endPointer();
+    }, 500);
+  }
+
+  _endPointer() {
+    if (!this._pointerActive) return;
+    this._pointerActive = false;
+    if (this._pointerSafetyTimer) {
+      clearTimeout(this._pointerSafetyTimer);
+      this._pointerSafetyTimer = 0;
+    }
+    if (this._renderDeferred) {
+      this._renderDeferred = false;
+      this._scheduleRender();
+    }
+  }
+
+  _togglePositions(toggleEl) {
+    const wrap = toggleEl.closest(".pv-positions");
+    if (!wrap) return;
+    const pfId = wrap.getAttribute("data-pf-id");
+    const open = wrap.getAttribute("data-open") === "true";
+    const next = !open;
+    wrap.setAttribute("data-open", next ? "true" : "false");
+    const showLabel = toggleEl.querySelector(".label-show");
+    if (showLabel) {
+      showLabel.textContent = next ? STR_DE.hidePositions : STR_DE.showPositions;
+    }
+    if (pfId) {
+      if (next) this._openPositions.add(pfId);
+      else this._openPositions.delete(pfId);
+    }
+  }
+
+  // --------------------------------------------------------------- rendering
+  _scheduleRender() {
+    if (this._renderRaf) return;
+    this._renderRaf = requestAnimationFrame(() => {
+      this._renderRaf = 0;
+      if (this._pointerActive) {
+        // Don't yank the DOM out from under an active click gesture; the
+        // pending render will be flushed in ``_endPointer``.
+        this._renderDeferred = true;
+        return;
+      }
+      this._render();
+    });
   }
 
   _render() {
@@ -881,44 +1011,8 @@ class PortfolioValuatorOverviewBase extends HTMLElement {
     }
 
     this.shadowRoot.innerHTML = `<style>${STYLES}</style>${renderHtml(model, { compact: this._compact, openPositions: this._openPositions })}`;
-    this._wireInteractions();
-  }
-
-  _wireInteractions() {
-    const root = this.shadowRoot;
-    // More-info on any element that carries data-entity.
-    root.querySelectorAll("[data-entity]").forEach((el) => {
-      const eid = el.getAttribute("data-entity");
-      if (!eid) return;
-      el.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const event = new Event("hass-more-info", { bubbles: true, composed: true });
-        event.detail = { entityId: eid };
-        this.dispatchEvent(event);
-      });
-    });
-    // Collapsible position tables. The open state is tracked on the component
-    // instance (``_openPositions``) so that data pushes (which trigger a full
-    // re-render) preserve the user's choice.
-    root.querySelectorAll(".pv-positions").forEach((wrap) => {
-      const toggle = wrap.querySelector(".pv-positions-toggle");
-      if (!toggle) return;
-      const showLabel = toggle.querySelector(".label-show");
-      const pfId = wrap.getAttribute("data-pf-id");
-      toggle.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const open = wrap.getAttribute("data-open") === "true";
-        const next = !open;
-        wrap.setAttribute("data-open", next ? "true" : "false");
-        if (showLabel) {
-          showLabel.textContent = next ? STR_DE.hidePositions : STR_DE.showPositions;
-        }
-        if (pfId) {
-          if (next) this._openPositions.add(pfId);
-          else this._openPositions.delete(pfId);
-        }
-      });
-    });
+    // No per-element listeners to attach: clicks are handled via delegation
+    // on the shadow root in ``_setupDelegation``.
   }
 }
 
